@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src http: https:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenHouse</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">OpenHouse</div>
+      <button class="nav-button active" data-view="desktop">桌面</button>
+      <button class="nav-button" data-view="services">服务</button>
+      <div class="sidebar-footer">本地控制中心</div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <h1 id="title">桌面</h1>
+        <button id="refresh" class="button button-quiet" title="刷新状态">刷新</button>
+      </header>
+      <section id="desktop-view" class="view">
+        <div id="app-grid" class="app-grid"></div>
+      </section>
+      <section id="services-view" class="view hidden">
+        <div id="service-list" class="service-list"></div>
+      </section>
+      <section id="web-view" class="view web-view hidden">
+        <button id="back" class="button back-button">返回桌面</button>
+        <iframe id="app-frame" title="OpenHouse 小 App" referrerpolicy="no-referrer"></iframe>
+      </section>
+    </main>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,32 @@
+name: build
+
+on:
+  push:
+    branches: [main, feature/mvp]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            command: npm run dist:win
+          - os: macos-latest
+            command: npm run dist:mac
+          - os: ubuntu-22.04
+            command: npm run dist:linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: ${{ matrix.command }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openhouse-${{ matrix.os }}
+          path: dist/*

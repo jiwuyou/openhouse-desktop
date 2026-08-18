@@ -1,0 +1,20 @@
+[
+  {
+    "id": "wuxianpi",
+    "title": "WuxianPi",
+    "icon": "W",
+    "url": "http://127.0.0.1:20765/",
+    "serviceId": "wuxianpi-runtime",
+    "desktop": true,
+    "order": 10
+  },
+  {
+    "id": "service-manager",
+    "title": "服务控制",
+    "icon": "S",
+    "url": "http://127.0.0.1:20087/",
+    "serviceId": "service-manager",
+    "desktop": true,
+    "order": 20
+  }
+]

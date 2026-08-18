@@ -1,0 +1,36 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, sans-serif;
+  background: #11161c;
+  color: #e8edf2;
+}
+
+* { box-sizing: border-box; }
+body { display: flex; height: 100vh; margin: 0; overflow: hidden; background: #11161c; }
+button { font: inherit; }
+.sidebar { width: 220px; padding: 22px 14px; display: flex; flex-direction: column; gap: 8px; background: #171e26; border-right: 1px solid #2b3540; }
+.brand { padding: 0 12px 24px; font-weight: 700; font-size: 20px; letter-spacing: .02em; }
+.nav-button, .button { border: 1px solid transparent; border-radius: 6px; cursor: pointer; color: #c5d0da; background: transparent; padding: 10px 12px; text-align: left; }
+.nav-button:hover, .nav-button.active { color: #fff; background: #273442; border-color: #3a4a5b; }
+.sidebar-footer { margin-top: auto; padding: 12px; color: #7f8c99; font-size: 12px; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar { height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid #2b3540; }
+h1 { margin: 0; font-size: 20px; flex: 1; }
+.button-quiet { text-align: center; background: #202b36; }
+.button:hover { background: #304050; color: #fff; }
+.view { flex: 1; min-height: 0; padding: 24px; overflow: auto; }
+.hidden { display: none !important; }
+.app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; max-width: 1100px; }
+.app-card { min-height: 150px; padding: 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 1px solid #2b3946; border-radius: 8px; cursor: pointer; color: #e8edf2; background: #19222b; text-align: left; }
+.app-card:hover { border-color: #4e83ad; background: #22303c; }
+.app-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 8px; color: #dff2ff; background: #2d6588; font-size: 20px; font-weight: 700; }
+.app-title { margin-top: 8px; font-weight: 600; }
+.app-status, .service-state { color: #8fa3b5; font-size: 12px; }
+.service-list { max-width: 900px; display: grid; gap: 10px; }
+.service-row { display: flex; align-items: center; gap: 20px; padding: 16px; border: 1px solid #2b3946; border-radius: 8px; background: #19222b; }
+.service-row > div:first-child { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.service-actions { display: flex; gap: 6px; }
+.button-small { padding: 7px 10px; background: #263442; text-align: center; }
+.web-view { display: flex; flex-direction: column; gap: 10px; padding: 0; }
+.back-button { align-self: flex-start; margin: 12px 24px 0; background: #202b36; }
+#app-frame { width: 100%; flex: 1; border: 0; background: #fff; }
