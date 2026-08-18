@@ -6,6 +6,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
+    "stage:runtime": "node scripts/stage-runtime.mjs",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
@@ -24,6 +25,12 @@
     "files": [
       "src/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "bundled/runtime",
+        "to": "runtime"
+      }
     ],
     "win": {
       "target": ["nsis"]

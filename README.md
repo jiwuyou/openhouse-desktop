@@ -1,36 +1,40 @@
 # OpenHouse Desktop
 
-OpenHouse Desktop is a small cross-platform shell for controlling OpenHouse web apps.
-WuxianPi remains a web application and is opened inside the shell; it is not rewritten as a native desktop UI.
+OpenHouse Desktop is a small Electron shell for local web applications. It
+bundles `service-manager`, a normal Windows WuxianPi, and an independent repair
+WuxianPi. The web pages remain WuxianPi pages; the shell only starts processes,
+opens BrowserWindows, and returns to the desktop.
 
-## MVP
+## Runtime layout
 
-- Desktop and sidebar navigation.
-- WuxianPi and service-manager web entries from `src/apps.json`.
-- Service status, start, stop, and restart through the existing local service-manager REST API.
-- Windows, macOS, and Linux packaging through Electron Builder.
-
-The shell expects WuxianPi and service-manager to be running locally. Configure the service-manager
-endpoint and token with:
-
-```bash
-OPENHOUSE_SERVICE_MANAGER_URL=http://127.0.0.1:20087 \
-OPENHOUSE_SERVICE_MANAGER_TOKEN='<token>' \
-npm start
+```text
+OpenHouse Desktop
+├── service-manager (Windows host)
+├── WuxianPi (Windows process, 20765)
+└── 维修 WuxianPi (independent Windows process, 20766)
 ```
+
+Other Linux-only apps can be registered with service-manager's `wsl` provider.
+They are launched through `wsl.exe` inside a selected WSL2 distribution and do
+not require a second service-manager.
 
 ## Development
 
 ```bash
 npm install
-npm start
+OPENHOUSE_SERVICE_MANAGER_BIN=/path/to/service-manager npm start -- --no-sandbox
 ```
 
-Build the installer for the current host with `npm run dist`. Platform-specific builds are available
-as `npm run dist:win`, `npm run dist:mac`, and `npm run dist:linux`.
+For a packaged build, stage `bundled/runtime` with the service-manager binary,
+the two WuxianPi directories, and a matching Node runtime before running
+`npm run dist:win`.
 
-## Scope
+```powershell
+npm run stage:runtime -- `
+  --wuxianpi C:\build\desktop-runtime `
+  --service-manager C:\build\service-manager.exe `
+  --node "C:\Program Files\nodejs\node.exe" `
+  --platform win32 --arch x64
 
-The first version deliberately uses the existing service-manager protocol and a small local app
-registry. Market synchronization, bundled Runtime installation, signing, and automatic updates are
-separate follow-up work.
+npm run dist:win
+```
