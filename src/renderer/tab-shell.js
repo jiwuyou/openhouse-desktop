@@ -176,6 +176,9 @@ function renderTabs() {
   const active = state.tabs.find((tab) => tab.active);
   $("show-desktop").classList.toggle("active", !active);
   $("new-tab").hidden = !active;
+  const canOpenInBrowser = Boolean(active && /^https?:\/\//i.test(active.url || ""));
+  $("open-browser").hidden = !canOpenInBrowser;
+  $("open-browser").disabled = !canOpenInBrowser;
   $("new-window").hidden = !active;
   $("container-count").textContent = state.containers
     ? `${state.containers.active}/${state.containers.max}`
@@ -219,6 +222,15 @@ async function init() {
       await window.openhouse.openTab(active.appId);
     } catch (error) {
       window.alert(error.message || "网页容器创建失败");
+    }
+  });
+  $("open-browser").addEventListener("click", async () => {
+    const active = state.tabs.find((tab) => tab.active);
+    if (!active || !/^https?:\/\//i.test(active.url || "")) return;
+    try {
+      await window.openhouse.openExternal(active.url);
+    } catch (error) {
+      window.alert(error.message || "无法打开系统浏览器");
     }
   });
   $("new-window").addEventListener("click", async () => {

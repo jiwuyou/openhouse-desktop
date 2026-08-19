@@ -27,9 +27,11 @@ closing an existing page.
 The primary window is the workspace shell: it opens with the application
 sidebar and desktop visible, without creating a web container. Selecting an app
 starts it when necessary and then opens or activates its tab; Ctrl/Cmd-click
-always creates another tab in the same window. Only an active tab can be opened
-in a separate window. Closing the primary window's last tab returns to the
-desktop, while closing the last tab in an additional window closes that window.
+always creates another tab in the same window. An active tab can be opened in a
+separate window or handed to the system browser with “用浏览器打开”; doing so
+leaves the OpenHouse tab unchanged. Closing the primary window's last tab
+returns to the desktop, while closing the last tab in an additional window
+closes that window.
 The fixed Desktop item in the sidebar returns to the desktop without closing
 any tabs or stopping any services.
 
