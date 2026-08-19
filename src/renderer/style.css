@@ -17,14 +17,19 @@ button { font: inherit; }
 .topbar { height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid #2b3540; }
 h1 { margin: 0; font-size: 20px; }
 .runtime-status { flex: 1; min-width: 0; color: #8fa3b5; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.container-setting { display: flex; align-items: center; gap: 7px; color: #8fa3b5; font-size: 12px; white-space: nowrap; }
+.container-setting input { width: 52px; height: 32px; border: 1px solid #344454; border-radius: 5px; color: #e8edf2; background: #202b36; padding: 0 6px; }
 .button-quiet { text-align: center; background: #202b36; }
 .button:hover { background: #304050; color: #fff; }
 .view { flex: 1; min-height: 0; padding: 24px; overflow: auto; }
 .hidden { display: none !important; }
 .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; max-width: 1100px; }
-.app-card { min-height: 150px; padding: 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 1px solid #2b3946; border-radius: 8px; cursor: pointer; color: #e8edf2; background: #19222b; text-align: left; }
+.app-card { min-height: 150px; display: flex; flex-direction: column; border: 1px solid #2b3946; border-radius: 8px; color: #e8edf2; background: #19222b; overflow: hidden; }
 .app-card:hover { border-color: #4e83ad; background: #22303c; }
-.app-card:disabled { cursor: wait; opacity: .65; }
+.app-open { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 0; cursor: pointer; color: inherit; background: transparent; text-align: left; }
+.app-open:disabled, .app-new-window:disabled { cursor: wait; opacity: .65; }
+.app-new-window { align-self: flex-end; margin: 0 12px 12px; border: 0; border-radius: 5px; color: #9fb0be; background: #263442; padding: 6px 9px; cursor: pointer; }
+.app-new-window:hover { color: #fff; background: #365069; }
 .app-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 8px; color: #dff2ff; background: #2d6588; font-size: 20px; font-weight: 700; }
 .app-title { margin-top: 8px; font-weight: 600; }
 .app-status, .service-state { color: #8fa3b5; font-size: 12px; }

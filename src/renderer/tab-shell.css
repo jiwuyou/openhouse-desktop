@@ -1,0 +1,23 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, sans-serif;
+  background: #11161c;
+  color: #e8edf2;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #11161c; }
+button, select { font: inherit; }
+.tabbar { height: 46px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #171e26; border-bottom: 1px solid #2b3540; }
+.tabs { min-width: 0; flex: 1; height: 36px; display: flex; align-items: stretch; gap: 4px; overflow: hidden; }
+.tab { min-width: 150px; max-width: 260px; display: flex; align-items: center; border: 1px solid #2b3946; border-radius: 6px; background: #202b36; }
+.tab.active { border-color: #4e83ad; background: #2b4050; }
+.tab-title { min-width: 0; flex: 1; overflow: hidden; border: 0; background: transparent; color: #cbd6df; padding: 7px 8px; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.tab.active .tab-title { color: #fff; }
+.tab-close, .icon-button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 5px; color: #9eacb8; background: transparent; cursor: pointer; }
+.tab-close:hover, .icon-button:hover { color: #fff; background: #3a4a5b; }
+.app-picker { width: 150px; height: 32px; border: 1px solid #344454; border-radius: 5px; color: #cbd6df; background: #202b36; padding: 0 7px; }
+.container-count { min-width: 42px; color: #8fa3b5; font-size: 12px; text-align: center; }
+.toolbar-button { height: 32px; border: 1px solid #344454; border-radius: 5px; color: #cbd6df; background: #202b36; padding: 0 10px; cursor: pointer; }
+.toolbar-button:hover { color: #fff; background: #304050; }
+.toolbar-button:disabled { cursor: default; opacity: .45; }

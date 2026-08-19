@@ -18,6 +18,12 @@ Other Linux-only apps can be registered with service-manager's `wsl` provider.
 They are launched through `wsl.exe` inside a selected WSL2 distribution and do
 not require a second service-manager.
 
+Each app window uses independent Electron `WebContentsView` containers as tabs.
+Tabs share the normal or repair web session, while keeping navigation and page
+state separate. The desktop setting controls the global simultaneous container
+limit (1-12, default 6); reaching the limit refuses a new tab instead of
+closing an existing page.
+
 ## Development
 
 ```bash

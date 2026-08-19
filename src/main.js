@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, shell } = require("electron");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
@@ -16,8 +16,13 @@ let serviceManagerProcess;
 let serviceManagerUrl = "http://127.0.0.1:20087";
 let serviceManagerToken = "";
 let serviceManagerError = "";
-const appWindows = new Map();
+const appShells = new Set();
 const appProcesses = new Map();
+const DEFAULT_MAX_WEB_CONTAINERS = 6;
+const MIN_MAX_WEB_CONTAINERS = 1;
+const MAX_MAX_WEB_CONTAINERS = 12;
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
 
 function normalizeUrl(value) {
   return String(value).replace(/\/$/, "");
@@ -29,6 +34,46 @@ function dataRoot() {
 
 function stateRoot() {
   return path.join(dataRoot(), "state");
+}
+
+function settingsPath() {
+  return path.join(stateRoot(), "settings.json");
+}
+
+function readSettings() {
+  try {
+    const value = JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
+    const max = Number(value.maxWebContainers);
+    if (Number.isInteger(max) && max >= MIN_MAX_WEB_CONTAINERS && max <= MAX_MAX_WEB_CONTAINERS) {
+      return { maxWebContainers: max };
+    }
+  } catch {
+    // Use defaults when settings are missing or damaged.
+  }
+  return { maxWebContainers: DEFAULT_MAX_WEB_CONTAINERS };
+}
+
+async function writeSettings(settings) {
+  await fsp.mkdir(stateRoot(), { recursive: true });
+  const temporary = `${settingsPath()}.tmp-${process.pid}`;
+  await fsp.writeFile(temporary, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+  await fsp.rename(temporary, settingsPath());
+}
+
+function containerCount() {
+  let count = 0;
+  for (const window of appShells) count += window.tabs.size;
+  return count;
+}
+
+function containerStats() {
+  const settings = readSettings();
+  return {
+    active: containerCount(),
+    max: settings.maxWebContainers,
+    min: MIN_MAX_WEB_CONTAINERS,
+    maxAllowed: MAX_MAX_WEB_CONTAINERS,
+  };
 }
 
 function runtimeRoot() {
@@ -145,6 +190,14 @@ async function startServiceManager() {
   serviceManagerUrl = normalizeUrl(process.env.OPENHOUSE_SERVICE_MANAGER_URL || serviceManagerUrl);
   serviceManagerToken = process.env.OPENHOUSE_SERVICE_MANAGER_TOKEN || "";
 
+  try {
+    await waitForHttp(`${serviceManagerUrl}/api/v1/health`, 1000);
+    serviceManagerToken = serviceManagerToken || readManagerToken();
+    return;
+  } catch {
+    // No existing manager is available, start the bundled process below.
+  }
+
   if (process.env.OPENHOUSE_EXTERNAL_SERVICE_MANAGER === "1") {
     await waitForHttp(`${serviceManagerUrl}/api/v1/health`);
     return;
@@ -231,7 +284,7 @@ function appDefinition(id) {
 
 async function startRepair(definition) {
   const current = appProcesses.get(definition.id);
-  if (current && !current.killed) return;
+  if (current && current.exitCode === null && !current.killed) return;
   const command = runtimeCommand("repair", definition.port);
   await fsp.mkdir(command.workingDir, { recursive: true });
   const logDirectory = path.join(stateRoot(), "wuxianpi-repair", "logs");
@@ -244,8 +297,15 @@ async function startRepair(definition) {
     windowsHide: true,
   });
   appProcesses.set(definition.id, child);
-  child.on("exit", () => appProcesses.delete(definition.id));
-  await waitForHttp(definition.url);
+  child.on("exit", () => {
+    if (appProcesses.get(definition.id) === child) appProcesses.delete(definition.id);
+  });
+  try {
+    await waitForHttp(definition.url);
+  } catch (error) {
+    stopRepair(definition.id);
+    throw error;
+  }
 }
 
 function stopProcessTree(child) {
@@ -264,18 +324,167 @@ function stopRepair(id) {
   stopProcessTree(child);
 }
 
-async function openApp(id) {
-  const definition = appDefinition(id);
-  if (!definition) throw new Error(`未知小 App: ${id}`);
+function sessionKeyFor(definition) {
+  if (definition.kind === "repair") return "repair";
+  if (definition.kind === "managed") return "normal";
+  return definition.id;
+}
+
+function configureWebContents(webContents, shellWindow) {
+  webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+  webContents.on("render-process-gone", (_event, details) => {
+    if (!shellWindow.destroying && !shellWindow.window.isDestroyed() && details.reason !== "clean-exit") {
+      shellWindow.window.webContents.send("tabs:error", {
+        message: "网页容器已退出，请关闭此标签页后重试。",
+      });
+    }
+  });
+}
+
+function shellForWindow(window) {
+  for (const shellWindow of appShells) {
+    if (shellWindow.window === window) return shellWindow;
+  }
+  return undefined;
+}
+
+function tabState(shellWindow) {
+  return [...shellWindow.tabs.values()].map((tab) => ({
+    id: tab.id,
+    appId: tab.definition.id,
+    title: tab.title || tab.definition.title,
+    icon: tab.definition.icon || "W",
+    url: tab.url || tab.definition.url,
+    active: tab.id === shellWindow.activeTabId,
+  }));
+}
+
+function sendTabState(shellWindow) {
+  if (!shellWindow.window.isDestroyed()) {
+    shellWindow.window.webContents.send("tabs:state", {
+      tabs: tabState(shellWindow),
+      containers: containerStats(),
+    });
+  }
+}
+
+function layoutShell(shellWindow) {
+  if (shellWindow.window.isDestroyed()) return;
+  const [width, height] = shellWindow.window.getContentSize();
+  const topbarHeight = 46;
+  for (const tab of shellWindow.tabs.values()) {
+    tab.view.setBounds({
+      x: 0,
+      y: topbarHeight,
+      width,
+      height: Math.max(0, height - topbarHeight),
+    });
+    tab.view.setVisible(tab.id === shellWindow.activeTabId);
+  }
+}
+
+function hasTabForApp(appId) {
+  for (const shellWindow of appShells) {
+    for (const tab of shellWindow.tabs.values()) {
+      if (tab.definition.id === appId) return true;
+    }
+  }
+  return false;
+}
+
+function destroyTab(shellWindow, tab) {
+  shellWindow.tabs.delete(tab.id);
+  shellWindow.window.contentView.removeChildView(tab.view);
+  try { tab.view.webContents.close(); } catch { /* already gone */ }
+  if (shellWindow.activeTabId === tab.id) {
+    shellWindow.activeTabId = shellWindow.tabs.keys().next().value || null;
+  }
+  if (tab.definition.kind === "repair" && !hasTabForApp(tab.definition.id)) {
+    stopRepair(tab.definition.id);
+  }
+}
+
+async function createTab(shellWindow, appId) {
+  const definition = appDefinition(appId);
+  if (!definition) throw new Error(`未知小 App: ${appId}`);
+  const settings = readSettings();
+  if (containerCount() >= settings.maxWebContainers) {
+    const error = new Error(`已达到最多同时存在的网页容器数量（${settings.maxWebContainers}）`);
+    error.code = "web_container_limit";
+    throw error;
+  }
   if (definition.kind === "managed") await ensureService(definition);
   if (definition.kind === "repair") await startRepair(definition);
 
-  const existing = appWindows.get(id);
-  if (existing && !existing.isDestroyed()) {
-    existing.focus();
-    return definition.url;
+  const tabId = `${definition.id}-${Date.now()}-${shellWindow.sequence++}`;
+  const view = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: `persist:openhouse-${sessionKeyFor(definition)}`,
+    },
+  });
+  const tab = {
+    id: tabId,
+    definition,
+    title: definition.title,
+    url: definition.url,
+    view,
+  };
+  configureWebContents(view.webContents, shellWindow);
+  view.webContents.on("page-title-updated", (event, title) => {
+    event.preventDefault();
+    tab.title = title || definition.title;
+    sendTabState(shellWindow);
+  });
+  view.webContents.on("did-navigate", (_event, url) => {
+    tab.url = url;
+    sendTabState(shellWindow);
+  });
+  view.webContents.on("did-navigate-in-page", (_event, url) => {
+    tab.url = url;
+    sendTabState(shellWindow);
+  });
+  shellWindow.window.contentView.addChildView(view);
+  shellWindow.tabs.set(tab.id, tab);
+  shellWindow.activeTabId = tab.id;
+  try {
+    await view.webContents.loadURL(definition.url);
+  } catch (error) {
+    destroyTab(shellWindow, tab);
+    throw error;
   }
+  layoutShell(shellWindow);
+  sendTabState(shellWindow);
+  return tab.id;
+}
 
+function closeTab(shellWindow, tabId) {
+  const tab = shellWindow.tabs.get(tabId);
+  if (!tab) return;
+  if (shellWindow.tabs.size === 1) {
+    shellWindow.window.close();
+    return;
+  }
+  destroyTab(shellWindow, tab);
+  layoutShell(shellWindow);
+  sendTabState(shellWindow);
+}
+
+function activateTab(shellWindow, tabId) {
+  if (!shellWindow.tabs.has(tabId)) return;
+  shellWindow.activeTabId = tabId;
+  layoutShell(shellWindow);
+  sendTabState(shellWindow);
+}
+
+async function createAppWindow(definition) {
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -283,23 +492,54 @@ async function openApp(id) {
     minHeight: 600,
     title: definition.title,
     webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("http://") || url.startsWith("https://")) {
-      void shell.openExternal(url);
-    }
-    return { action: "deny" };
-  });
+  const shellWindow = {
+    window,
+    tabs: new Map(),
+    activeTabId: null,
+    sequence: 1,
+    destroying: false,
+  };
+  appShells.add(shellWindow);
+  window.on("resize", () => layoutShell(shellWindow));
   window.on("closed", () => {
-    appWindows.delete(id);
-    if (definition.kind === "repair") stopRepair(id);
+    shellWindow.destroying = true;
+    for (const tab of shellWindow.tabs.values()) {
+      try { window.contentView.removeChildView(tab.view); } catch { /* window already destroyed */ }
+      try { tab.view.webContents.close(); } catch { /* already gone */ }
+    }
+    shellWindow.tabs.clear();
+    appShells.delete(shellWindow);
+    if (!hasTabForApp("wuxianpi-repair")) stopRepair("wuxianpi-repair");
   });
-  appWindows.set(id, window);
-  await window.loadURL(definition.url);
+  try {
+    await window.loadFile(path.join(__dirname, "renderer", "tab-shell.html"));
+    await createTab(shellWindow, definition.id);
+  } catch (error) {
+    window.close();
+    throw error;
+  }
+  return shellWindow;
+}
+
+async function openApp(id, options = {}) {
+  const definition = appDefinition(id);
+  if (!definition) throw new Error(`未知小 App: ${id}`);
+  const existingShell = [...appShells].find((shellWindow) =>
+    !shellWindow.window.isDestroyed() && [...shellWindow.tabs.values()].some((tab) => tab.definition.id === id));
+  if (existingShell && !options.newWindow) {
+    const tab = [...existingShell.tabs.values()].find((item) => item.definition.id === id);
+    if (tab) activateTab(existingShell, tab.id);
+    existingShell.window.focus();
+    return definition.url;
+  }
+  const shellWindow = await createAppWindow(definition);
+  shellWindow.window.focus();
   return definition.url;
 }
 
@@ -321,7 +561,42 @@ function createDesktopWindow() {
 }
 
 ipcMain.handle("apps:list", () => appDefinitions);
-ipcMain.handle("apps:open", (_event, id) => openApp(id));
+ipcMain.handle("apps:open", (_event, id, options) => openApp(id, options));
+ipcMain.handle("tabs:list", (event) => {
+  const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
+  return shellWindow ? { tabs: tabState(shellWindow), containers: containerStats() } : { tabs: [], containers: containerStats() };
+});
+ipcMain.handle("tabs:open", async (event, appId) => {
+  const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
+  if (!shellWindow) throw new Error("找不到网页工作窗口");
+  return createTab(shellWindow, appId);
+});
+ipcMain.handle("tabs:close", (event, tabId) => {
+  const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
+  if (shellWindow) closeTab(shellWindow, tabId);
+});
+ipcMain.handle("tabs:activate", (event, tabId) => {
+  const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
+  if (shellWindow) activateTab(shellWindow, tabId);
+});
+ipcMain.handle("tabs:new-window", async (event, appId) => {
+  const definition = appDefinition(appId);
+  if (!definition) throw new Error(`未知小 App: ${appId}`);
+  return openApp(appId, { newWindow: true });
+});
+ipcMain.handle("containers:settings", () => containerStats());
+ipcMain.handle("containers:set-max", async (_event, value) => {
+  const max = Number(value);
+  if (!Number.isInteger(max) || max < MIN_MAX_WEB_CONTAINERS || max > MAX_MAX_WEB_CONTAINERS) {
+    throw new Error(`网页容器上限必须是 ${MIN_MAX_WEB_CONTAINERS} 到 ${MAX_MAX_WEB_CONTAINERS} 之间的整数`);
+  }
+  await writeSettings({ maxWebContainers: max });
+  for (const shellWindow of appShells) sendTabState(shellWindow);
+  return containerStats();
+});
+ipcMain.handle("app-window:close", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
+});
 ipcMain.handle("services:status", async () => serviceManagerRequest("/api/v1/services/statuses"));
 ipcMain.handle("runtime:status", () => ({
   serviceManager: serviceManagerError ? "unavailable" : "running",
@@ -346,12 +621,27 @@ app.whenReady().then(async () => {
   });
 });
 
+app.on("second-instance", () => {
+  if (desktopWindow && !desktopWindow.isDestroyed()) {
+    if (desktopWindow.isMinimized()) desktopWindow.restore();
+    desktopWindow.focus();
+  }
+});
+
 let shuttingDown = false;
 app.on("before-quit", (event) => {
   if (shuttingDown) return;
   event.preventDefault();
   shuttingDown = true;
   void (async () => {
+    for (const shellWindow of appShells) {
+      shellWindow.destroying = true;
+      for (const tab of shellWindow.tabs.values()) {
+        shellWindow.window.contentView.removeChildView(tab.view);
+        try { tab.view.webContents.close(); } catch { /* already gone */ }
+      }
+      shellWindow.tabs.clear();
+    }
     for (const definition of appDefinitions) {
       if (definition.kind !== "managed") continue;
       try {

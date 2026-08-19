@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenHouse</title>
+    <link rel="stylesheet" href="./tab-shell.css" />
+  </head>
+  <body>
+    <header class="tabbar">
+      <div id="tabs" class="tabs" role="tablist"></div>
+      <button id="new-tab" class="icon-button" type="button" title="新建网页容器">+</button>
+      <select id="app-picker" class="app-picker" aria-label="选择要打开的网页">
+        <option value="">新建网页容器</option>
+      </select>
+      <span id="container-count" class="container-count"></span>
+      <button id="new-window" class="toolbar-button" type="button" title="在新窗口打开当前应用">新窗口</button>
+      <button id="close-window" class="toolbar-button" type="button" title="关闭此窗口">关闭窗口</button>
+    </header>
+    <script src="./tab-shell.js"></script>
+  </body>
+</html>

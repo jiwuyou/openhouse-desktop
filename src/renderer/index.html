@@ -16,6 +16,10 @@
       <header class="topbar">
         <h1>桌面</h1>
         <div id="runtime-status" class="runtime-status">正在启动本地服务</div>
+        <label class="container-setting" title="限制同时打开的网页容器数量">
+          网页容器
+          <input id="max-containers" type="number" min="1" max="12" step="1" inputmode="numeric" />
+        </label>
         <button id="refresh" class="button button-quiet" title="刷新状态">刷新</button>
       </header>
       <section class="view">
