@@ -7,8 +7,37 @@
 
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #11161c; }
-button, select { font: inherit; }
-.tabbar { height: 46px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #171e26; border-bottom: 1px solid #2b3540; }
+button { font: inherit; }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 2; width: 224px; display: flex; flex-direction: column; padding: 18px 10px 10px; background: #151c23; border-right: 1px solid #2b3540; }
+.brand { height: 38px; padding: 2px 9px; color: #f2f5f7; font-size: 18px; font-weight: 700; }
+.desktop-nav { height: 42px; display: flex; align-items: center; gap: 9px; margin-bottom: 6px; padding: 5px 9px; border: 1px solid transparent; border-radius: 6px; color: #b9c5cf; background: transparent; text-align: left; cursor: pointer; }
+.desktop-nav:hover { color: #fff; background: #1d2832; }
+.desktop-nav.active { color: #fff; border-color: #38536a; background: #23323e; }
+.desktop-nav-icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 5px; color: #dceaf3; background: #344b5d; font-size: 12px; font-weight: 700; }
+.section-label { padding: 7px 9px; color: #758492; font-size: 11px; }
+.app-list { min-height: 0; display: flex; flex: 1; flex-direction: column; gap: 4px; overflow-y: auto; }
+.app-item { display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: center; border: 1px solid transparent; border-radius: 6px; }
+.app-item:hover { background: #1d2832; }
+.app-item.active { border-color: #38536a; background: #23323e; }
+.app-launch { min-width: 0; height: 54px; display: grid; grid-template-columns: 7px 30px minmax(0, 1fr); align-items: center; gap: 7px; padding: 5px 4px 5px 8px; border: 0; color: #d8e0e7; background: transparent; text-align: left; cursor: pointer; }
+.app-launch:hover .app-title { color: #fff; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #687784; }
+.status-dot.running { background: #4fa66b; }
+.status-dot.starting, .status-dot.stopping { background: #d19a4a; }
+.status-dot.failed { background: #d86666; }
+.app-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 6px; color: #e5f4ff; background: #2d6588; font-size: 13px; font-weight: 700; }
+.app-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.app-title, .app-status { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.app-title { font-size: 13px; font-weight: 600; }
+.app-status { color: #8495a3; font-size: 11px; }
+.app-toggle { position: relative; width: 32px; height: 18px; margin-right: 6px; padding: 0; border: 1px solid #52606b; border-radius: 9px; background: #303b45; cursor: pointer; }
+.app-toggle.on { border-color: #4b8a62; background: #39734e; }
+.app-toggle:disabled { cursor: wait; opacity: .55; }
+.toggle-thumb { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #c6d0d8; transition: transform 120ms ease; }
+.app-toggle.on .toggle-thumb { transform: translateX(14px); background: #fff; }
+.app-error { grid-column: 1 / -1; margin: -3px 8px 7px 52px; overflow: hidden; color: #db8585; font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
+.sidebar-footer { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 9px; border-top: 1px solid #29343e; color: #7f8f9d; font-size: 11px; }
+.tabbar { position: fixed; inset: 0 0 auto 224px; z-index: 2; height: 46px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #171e26; border-bottom: 1px solid #2b3540; }
 .tabs { min-width: 0; flex: 1; height: 36px; display: flex; align-items: stretch; gap: 4px; overflow: hidden; }
 .tab { min-width: 150px; max-width: 260px; display: flex; align-items: center; border: 1px solid #2b3946; border-radius: 6px; background: #202b36; }
 .tab.active { border-color: #4e83ad; background: #2b4050; }
@@ -16,8 +45,25 @@ button, select { font: inherit; }
 .tab.active .tab-title { color: #fff; }
 .tab-close, .icon-button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 5px; color: #9eacb8; background: transparent; cursor: pointer; }
 .tab-close:hover, .icon-button:hover { color: #fff; background: #3a4a5b; }
-.app-picker { width: 150px; height: 32px; border: 1px solid #344454; border-radius: 5px; color: #cbd6df; background: #202b36; padding: 0 7px; }
 .container-count { min-width: 42px; color: #8fa3b5; font-size: 12px; text-align: center; }
 .toolbar-button { height: 32px; border: 1px solid #344454; border-radius: 5px; color: #cbd6df; background: #202b36; padding: 0 10px; cursor: pointer; }
 .toolbar-button:hover { color: #fff; background: #304050; }
 .toolbar-button:disabled { cursor: default; opacity: .45; }
+.workspace-state { position: fixed; inset: 46px 0 0 224px; display: grid; place-items: center; padding: 32px; background: #11161c; }
+.workspace-state[hidden] { display: none; }
+.desktop-panel { width: min(760px, 100%); align-self: start; margin-top: 54px; }
+.desktop-panel[hidden], .service-panel[hidden] { display: none; }
+.desktop-panel h1 { margin: 0 0 24px; color: #eef3f6; font-size: 22px; font-weight: 600; }
+.desktop-apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 14px; }
+.desktop-app { min-width: 0; height: 122px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 7px; padding: 16px; border: 1px solid #2b3946; border-radius: 7px; color: #e2e9ee; background: #19222b; text-align: left; cursor: pointer; }
+.desktop-app:hover { border-color: #4e83ad; background: #22303c; }
+.desktop-app-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; color: #e5f4ff; background: #2d6588; font-size: 16px; font-weight: 700; }
+.desktop-app-title { max-width: 100%; overflow: hidden; font-size: 13px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+.desktop-app-state { color: #8293a1; font-size: 11px; }
+.service-panel { width: min(440px, 100%); display: flex; flex-direction: column; align-items: center; color: #d9e2e9; text-align: center; }
+.service-icon { width: 50px; height: 50px; display: grid; place-items: center; margin-bottom: 14px; border-radius: 7px; color: #e5f4ff; background: #2d6588; font-size: 20px; font-weight: 700; }
+.service-panel h1 { margin: 0; font-size: 18px; }
+.service-panel p { min-height: 20px; margin: 8px 0 18px; color: #8fa0ae; font-size: 13px; line-height: 1.6; }
+.primary-button { height: 34px; padding: 0 14px; border: 1px solid #4f82a7; border-radius: 5px; color: #fff; background: #326b92; cursor: pointer; }
+.primary-button:hover { background: #3e7ca6; }
+.primary-button:disabled { cursor: wait; opacity: .55; }

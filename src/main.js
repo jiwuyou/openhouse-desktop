@@ -12,15 +12,21 @@ const baseAppDefinitions = JSON.parse(
 let appDefinitions = baseAppDefinitions;
 
 let desktopWindow;
+let primaryShell;
 let serviceManagerProcess;
 let serviceManagerUrl = "http://127.0.0.1:20087";
 let serviceManagerToken = "";
 let serviceManagerError = "";
 const appShells = new Set();
 const appProcesses = new Map();
+const appOperations = new Map();
+const appErrors = new Map();
+const knownAppStates = new Map();
 const DEFAULT_MAX_WEB_CONTAINERS = 6;
 const MIN_MAX_WEB_CONTAINERS = 1;
 const MAX_MAX_WEB_CONTAINERS = 12;
+const SIDEBAR_WIDTH = 224;
+const TOPBAR_HEIGHT = 46;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
 
@@ -147,30 +153,50 @@ async function waitForHttp(url, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   let lastError = "";
   while (Date.now() < deadline) {
+    const controller = new AbortController();
+    const requestTimeout = setTimeout(
+      () => controller.abort(),
+      Math.min(1000, Math.max(100, deadline - Date.now())),
+    );
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
       if (response.ok) return response;
       lastError = `HTTP ${response.status}`;
     } catch (error) {
-      lastError = error.message || String(error);
+      lastError = error.name === "AbortError" ? "请求超时" : error.message || String(error);
+    } finally {
+      clearTimeout(requestTimeout);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`${url} 未就绪: ${lastError}`);
 }
 
-async function serviceManagerRequest(requestPath, method = "GET", body) {
+async function serviceManagerRequest(requestPath, method = "GET", body, timeoutMs = 15000) {
   if (serviceManagerError) throw new Error(serviceManagerError);
   const headers = { accept: "application/json" };
   if (serviceManagerToken) headers.authorization = `Bearer ${serviceManagerToken}`;
   if (body !== undefined) {
     headers["content-type"] = "application/json";
   }
-  const response = await fetch(`${serviceManagerUrl}${requestPath}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetch(`${serviceManagerUrl}${requestPath}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(`service-manager 请求超时: ${requestPath}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   const text = await response.text();
   let value = null;
   try {
@@ -220,10 +246,11 @@ async function startServiceManager() {
     "--bind",
     "127.0.0.1:20087",
   ], {
-    detached: false,
+    detached: true,
     stdio: ["ignore", log, log],
     windowsHide: true,
   });
+  serviceManagerProcess.unref();
   serviceManagerProcess.on("exit", (code) => {
     if (code !== 0 && !serviceManagerError) {
       serviceManagerError = `service-manager 已退出 (${code ?? "unknown"})`;
@@ -298,7 +325,15 @@ async function startRepair(definition) {
   });
   appProcesses.set(definition.id, child);
   child.on("exit", () => {
-    if (appProcesses.get(definition.id) === child) appProcesses.delete(definition.id);
+    if (appProcesses.get(definition.id) !== child) return;
+    appProcesses.delete(definition.id);
+    appErrors.set(definition.id, `进程已退出 (${child.exitCode ?? "unknown"})`);
+    knownAppStates.set(definition.id, {
+      id: definition.id,
+      state: "failed",
+      error: appErrors.get(definition.id),
+    });
+    void broadcastApplicationStates();
   });
   try {
     await waitForHttp(definition.url);
@@ -322,6 +357,154 @@ function stopRepair(id) {
   if (!child) return;
   appProcesses.delete(id);
   stopProcessTree(child);
+}
+
+async function readApplicationState(definition) {
+  if (definition.kind === "repair") {
+    const child = appProcesses.get(definition.id);
+    return child && child.exitCode === null && !child.killed ? "running" : "stopped";
+  }
+  if (definition.kind === "managed") {
+    try {
+      await waitForHttp(definition.url, 1000);
+      return "running";
+    } catch {
+      return "stopped";
+    }
+  }
+  return "running";
+}
+
+function applicationStatePayload() {
+  return appDefinitions.map((definition) => knownAppStates.get(definition.id) || {
+    id: definition.id,
+    state: "stopped",
+    error: "",
+  });
+}
+
+function sendApplicationStates() {
+  const value = { apps: applicationStatePayload() };
+  for (const shellWindow of appShells) {
+    if (!shellWindow.window.isDestroyed()) shellWindow.window.webContents.send("apps:state", value);
+  }
+  if (desktopWindow && !desktopWindow.isDestroyed()) {
+    desktopWindow.webContents.send("apps:state", value);
+  }
+}
+
+async function refreshApplicationStates() {
+  await Promise.all(appDefinitions.map(async (definition) => {
+    const operation = appOperations.get(definition.id);
+    if (operation) {
+      knownAppStates.set(definition.id, {
+        id: definition.id,
+        state: operation,
+        error: "",
+      });
+      return;
+    }
+    try {
+      const state = await readApplicationState(definition);
+      const error = appErrors.get(definition.id) || "";
+      knownAppStates.set(definition.id, {
+        id: definition.id,
+        state: error && state !== "running" ? "failed" : state,
+        error,
+      });
+    } catch (error) {
+      knownAppStates.set(definition.id, {
+        id: definition.id,
+        state: "failed",
+        error: error.message || String(error),
+      });
+    }
+  }));
+  for (const shellWindow of appShells) layoutShell(shellWindow);
+  sendApplicationStates();
+  return applicationStatePayload();
+}
+
+async function broadcastApplicationStates() {
+  try {
+    await refreshApplicationStates();
+  } catch {
+    sendApplicationStates();
+  }
+}
+
+async function startApplication(definition) {
+  if (definition.kind === "managed") await ensureService(definition);
+  if (definition.kind === "repair") await startRepair(definition);
+}
+
+async function stopApplication(definition) {
+  if (definition.kind === "managed") {
+    try {
+      await serviceManagerRequest(
+        `/api/v1/services/${encodeURIComponent(definition.serviceId)}/stop`,
+        "POST",
+      );
+    } catch (error) {
+      if (error.status !== 404) throw error;
+    }
+  }
+  if (definition.kind === "repair") stopRepair(definition.id);
+}
+
+async function reloadTabsForApp(appId) {
+  const loads = [];
+  for (const shellWindow of appShells) {
+    for (const tab of shellWindow.tabs.values()) {
+      if (tab.definition.id !== appId) continue;
+      loads.push(tab.view.webContents.loadURL(tab.url || tab.definition.url).catch((error) => {
+        if (!shellWindow.window.isDestroyed()) {
+          shellWindow.window.webContents.send("tabs:error", {
+            message: error.message || `${tab.definition.title} 页面加载失败`,
+          });
+        }
+      }));
+    }
+  }
+  await Promise.all(loads);
+}
+
+async function setApplicationRunning(id, shouldRun) {
+  const definition = appDefinition(id);
+  if (!definition) throw new Error(`未知小 App: ${id}`);
+  if (appOperations.has(id)) throw new Error(`${definition.title} 正在处理中`);
+
+  try {
+    const currentState = await readApplicationState(definition);
+    if ((shouldRun && currentState === "running") || (!shouldRun && currentState === "stopped")) {
+      appErrors.delete(id);
+      await refreshApplicationStates();
+      return knownAppStates.get(id);
+    }
+  } catch {
+    // Let the requested operation provide the actionable error.
+  }
+
+  appOperations.set(id, shouldRun ? "starting" : "stopping");
+  appErrors.delete(id);
+  await refreshApplicationStates();
+  try {
+    if (shouldRun) {
+      await startApplication(definition);
+      knownAppStates.set(id, { id, state: "running", error: "" });
+      await reloadTabsForApp(id);
+    } else {
+      await stopApplication(definition);
+      knownAppStates.set(id, { id, state: "stopped", error: "" });
+    }
+  } catch (error) {
+    appErrors.set(id, error.message || String(error));
+    throw error;
+  } finally {
+    appOperations.delete(id);
+    await refreshApplicationStates();
+  }
+  return knownAppStates.get(id);
 }
 
 function sessionKeyFor(definition) {
@@ -369,6 +552,7 @@ function sendTabState(shellWindow) {
     shellWindow.window.webContents.send("tabs:state", {
       tabs: tabState(shellWindow),
       containers: containerStats(),
+      primary: shellWindow.primary,
     });
   }
 }
@@ -376,25 +560,16 @@ function sendTabState(shellWindow) {
 function layoutShell(shellWindow) {
   if (shellWindow.window.isDestroyed()) return;
   const [width, height] = shellWindow.window.getContentSize();
-  const topbarHeight = 46;
   for (const tab of shellWindow.tabs.values()) {
     tab.view.setBounds({
-      x: 0,
-      y: topbarHeight,
-      width,
-      height: Math.max(0, height - topbarHeight),
+      x: SIDEBAR_WIDTH,
+      y: TOPBAR_HEIGHT,
+      width: Math.max(0, width - SIDEBAR_WIDTH),
+      height: Math.max(0, height - TOPBAR_HEIGHT),
     });
-    tab.view.setVisible(tab.id === shellWindow.activeTabId);
+    const state = knownAppStates.get(tab.definition.id)?.state;
+    tab.view.setVisible(tab.id === shellWindow.activeTabId && state === "running");
   }
-}
-
-function hasTabForApp(appId) {
-  for (const shellWindow of appShells) {
-    for (const tab of shellWindow.tabs.values()) {
-      if (tab.definition.id === appId) return true;
-    }
-  }
-  return false;
 }
 
 function destroyTab(shellWindow, tab) {
@@ -404,12 +579,9 @@ function destroyTab(shellWindow, tab) {
   if (shellWindow.activeTabId === tab.id) {
     shellWindow.activeTabId = shellWindow.tabs.keys().next().value || null;
   }
-  if (tab.definition.kind === "repair" && !hasTabForApp(tab.definition.id)) {
-    stopRepair(tab.definition.id);
-  }
 }
 
-async function createTab(shellWindow, appId) {
+async function createTab(shellWindow, appId, startUrl) {
   const definition = appDefinition(appId);
   if (!definition) throw new Error(`未知小 App: ${appId}`);
   const settings = readSettings();
@@ -418,8 +590,7 @@ async function createTab(shellWindow, appId) {
     error.code = "web_container_limit";
     throw error;
   }
-  if (definition.kind === "managed") await ensureService(definition);
-  if (definition.kind === "repair") await startRepair(definition);
+  await setApplicationRunning(definition.id, true);
 
   const tabId = `${definition.id}-${Date.now()}-${shellWindow.sequence++}`;
   const view = new WebContentsView({
@@ -434,7 +605,7 @@ async function createTab(shellWindow, appId) {
     id: tabId,
     definition,
     title: definition.title,
-    url: definition.url,
+    url: startUrl || definition.url,
     view,
   };
   configureWebContents(view.webContents, shellWindow);
@@ -455,7 +626,7 @@ async function createTab(shellWindow, appId) {
   shellWindow.tabs.set(tab.id, tab);
   shellWindow.activeTabId = tab.id;
   try {
-    await view.webContents.loadURL(definition.url);
+    await view.webContents.loadURL(tab.url);
   } catch (error) {
     destroyTab(shellWindow, tab);
     throw error;
@@ -468,7 +639,7 @@ async function createTab(shellWindow, appId) {
 function closeTab(shellWindow, tabId) {
   const tab = shellWindow.tabs.get(tabId);
   if (!tab) return;
-  if (shellWindow.tabs.size === 1) {
+  if (shellWindow.tabs.size === 1 && !shellWindow.primary) {
     shellWindow.window.close();
     return;
   }
@@ -484,13 +655,20 @@ function activateTab(shellWindow, tabId) {
   sendTabState(shellWindow);
 }
 
-async function createAppWindow(definition) {
+function showDesktop(shellWindow) {
+  shellWindow.activeTabId = null;
+  layoutShell(shellWindow);
+  sendTabState(shellWindow);
+}
+
+async function createShellWindow(options = {}) {
+  const primary = Boolean(options.primary);
   const window = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 900,
-    minHeight: 600,
-    title: definition.title,
+    width: primary ? 1160 : 1280,
+    height: primary ? 760 : 820,
+    minWidth: 880,
+    minHeight: 560,
+    title: "OpenHouse",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -504,7 +682,12 @@ async function createAppWindow(definition) {
     activeTabId: null,
     sequence: 1,
     destroying: false,
+    primary,
   };
+  if (primary) {
+    desktopWindow = window;
+    primaryShell = shellWindow;
+  }
   appShells.add(shellWindow);
   window.on("resize", () => layoutShell(shellWindow));
   window.on("closed", () => {
@@ -515,11 +698,15 @@ async function createAppWindow(definition) {
     }
     shellWindow.tabs.clear();
     appShells.delete(shellWindow);
-    if (!hasTabForApp("wuxianpi-repair")) stopRepair("wuxianpi-repair");
+    if (primaryShell === shellWindow) {
+      primaryShell = undefined;
+      desktopWindow = undefined;
+    }
   });
   try {
     await window.loadFile(path.join(__dirname, "renderer", "tab-shell.html"));
-    await createTab(shellWindow, definition.id);
+    if (options.appId) await createTab(shellWindow, options.appId, options.url);
+    else sendTabState(shellWindow);
   } catch (error) {
     window.close();
     throw error;
@@ -530,41 +717,33 @@ async function createAppWindow(definition) {
 async function openApp(id, options = {}) {
   const definition = appDefinition(id);
   if (!definition) throw new Error(`未知小 App: ${id}`);
-  const existingShell = [...appShells].find((shellWindow) =>
-    !shellWindow.window.isDestroyed() && [...shellWindow.tabs.values()].some((tab) => tab.definition.id === id));
-  if (existingShell && !options.newWindow) {
-    const tab = [...existingShell.tabs.values()].find((item) => item.definition.id === id);
-    if (tab) activateTab(existingShell, tab.id);
-    existingShell.window.focus();
+  if (!primaryShell || primaryShell.window.isDestroyed()) await createDesktopWindow();
+  const tab = [...primaryShell.tabs.values()].find((item) => item.definition.id === id);
+  if (tab) {
+    await setApplicationRunning(id, true);
+    activateTab(primaryShell, tab.id);
+    primaryShell.window.focus();
     return definition.url;
   }
-  const shellWindow = await createAppWindow(definition);
-  shellWindow.window.focus();
+  await createTab(primaryShell, id);
+  primaryShell.window.focus();
   return definition.url;
 }
 
-function createDesktopWindow() {
-  desktopWindow = new BrowserWindow({
-    width: 1160,
-    height: 760,
-    minWidth: 880,
-    minHeight: 560,
-    title: "OpenHouse",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  desktopWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+async function createDesktopWindow() {
+  if (primaryShell && !primaryShell.window.isDestroyed()) return primaryShell;
+  return createShellWindow({ primary: true });
 }
 
 ipcMain.handle("apps:list", () => appDefinitions);
 ipcMain.handle("apps:open", (_event, id, options) => openApp(id, options));
+ipcMain.handle("apps:statuses", () => refreshApplicationStates());
+ipcMain.handle("apps:set-running", (_event, id, shouldRun) => setApplicationRunning(id, Boolean(shouldRun)));
 ipcMain.handle("tabs:list", (event) => {
   const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
-  return shellWindow ? { tabs: tabState(shellWindow), containers: containerStats() } : { tabs: [], containers: containerStats() };
+  return shellWindow
+    ? { tabs: tabState(shellWindow), containers: containerStats(), primary: shellWindow.primary }
+    : { tabs: [], containers: containerStats(), primary: false };
 });
 ipcMain.handle("tabs:open", async (event, appId) => {
   const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
@@ -579,10 +758,20 @@ ipcMain.handle("tabs:activate", (event, tabId) => {
   const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
   if (shellWindow) activateTab(shellWindow, tabId);
 });
-ipcMain.handle("tabs:new-window", async (event, appId) => {
-  const definition = appDefinition(appId);
-  if (!definition) throw new Error(`未知小 App: ${appId}`);
-  return openApp(appId, { newWindow: true });
+ipcMain.handle("tabs:show-desktop", (event) => {
+  const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
+  if (shellWindow) showDesktop(shellWindow);
+});
+ipcMain.handle("tabs:new-window", async (event) => {
+  const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
+  const tab = shellWindow?.tabs.get(shellWindow.activeTabId);
+  if (!tab) throw new Error("当前没有可在新窗口中打开的标签页");
+  const newShell = await createShellWindow({
+    appId: tab.definition.id,
+    url: tab.url || tab.definition.url,
+  });
+  newShell.window.focus();
+  return tab.url || tab.definition.url;
 });
 ipcMain.handle("containers:settings", () => containerStats());
 ipcMain.handle("containers:set-max", async (_event, value) => {
@@ -610,14 +799,17 @@ ipcMain.handle("shell:open-external", (_event, url) => {
 app.whenReady().then(async () => {
   await fsp.mkdir(stateRoot(), { recursive: true });
   appDefinitions = [...baseAppDefinitions, ...loadBundledWslApps()];
-  try {
-    await startServiceManager();
-  } catch (error) {
-    serviceManagerError = error.message || String(error);
-  }
-  createDesktopWindow();
+  await createDesktopWindow();
+  void (async () => {
+    try {
+      await startServiceManager();
+    } catch (error) {
+      serviceManagerError = error.message || String(error);
+    }
+    await broadcastApplicationStates();
+  })();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createDesktopWindow();
+    if (!primaryShell || primaryShell.window.isDestroyed()) void createDesktopWindow();
   });
 });
 
@@ -625,7 +817,9 @@ app.on("second-instance", () => {
   if (desktopWindow && !desktopWindow.isDestroyed()) {
     if (desktopWindow.isMinimized()) desktopWindow.restore();
     desktopWindow.focus();
+    return;
   }
+  void createDesktopWindow();
 });
 
 let shuttingDown = false;
@@ -642,23 +836,10 @@ app.on("before-quit", (event) => {
       }
       shellWindow.tabs.clear();
     }
-    for (const definition of appDefinitions) {
-      if (definition.kind !== "managed") continue;
-      try {
-        await serviceManagerRequest(
-          `/api/v1/services/${encodeURIComponent(definition.serviceId)}/stop`,
-          "POST",
-        );
-      } catch {
-        // The manager may already be unavailable; process-tree cleanup below
-        // still prevents a child runtime from being left behind.
-      }
-    }
     for (const [id, child] of appProcesses) {
       appProcesses.delete(id);
       stopProcessTree(child);
     }
-    stopProcessTree(serviceManagerProcess);
     app.exit(0);
   })();
 });

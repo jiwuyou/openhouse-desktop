@@ -7,16 +7,36 @@
     <link rel="stylesheet" href="./tab-shell.css" />
   </head>
   <body>
+    <aside class="sidebar">
+      <div class="brand">OpenHouse</div>
+      <button id="show-desktop" class="desktop-nav" type="button">
+        <span class="desktop-nav-icon">桌</span>
+        <span>桌面</span>
+      </button>
+      <div class="section-label">应用</div>
+      <nav id="app-list" class="app-list" aria-label="应用列表"></nav>
+      <div class="sidebar-footer">
+        <span>网页容器</span>
+        <span id="container-count" class="container-count"></span>
+      </div>
+    </aside>
     <header class="tabbar">
       <div id="tabs" class="tabs" role="tablist"></div>
-      <button id="new-tab" class="icon-button" type="button" title="新建网页容器">+</button>
-      <select id="app-picker" class="app-picker" aria-label="选择要打开的网页">
-        <option value="">新建网页容器</option>
-      </select>
-      <span id="container-count" class="container-count"></span>
-      <button id="new-window" class="toolbar-button" type="button" title="在新窗口打开当前应用">新窗口</button>
-      <button id="close-window" class="toolbar-button" type="button" title="关闭此窗口">关闭窗口</button>
+      <button id="new-tab" class="icon-button" type="button" title="为当前应用新建标签页">+</button>
+      <button id="new-window" class="toolbar-button" type="button" title="在新窗口中打开当前标签" hidden>在新窗口中打开</button>
     </header>
+    <main id="workspace-state" class="workspace-state" hidden>
+      <section id="desktop-panel" class="desktop-panel">
+        <h1>桌面</h1>
+        <div id="desktop-apps" class="desktop-apps"></div>
+      </section>
+      <section id="service-panel" class="service-panel" hidden>
+        <div id="service-icon" class="service-icon"></div>
+        <h1 id="service-title"></h1>
+        <p id="service-message"></p>
+        <button id="restart-service" class="primary-button" type="button">重新启动</button>
+      </section>
+    </main>
     <script src="./tab-shell.js"></script>
   </body>
 </html>
