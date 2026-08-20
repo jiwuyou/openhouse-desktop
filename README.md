@@ -35,6 +35,10 @@ closes that window.
 The fixed Desktop item in the sidebar returns to the desktop without closing
 any tabs or stopping any services.
 
+With an active tab, “隐藏边框” removes the OpenHouse sidebar and tab bar and
+expands the page to the full content area. The same switch is available under
+the Chinese “查看” menu and with `Ctrl/Cmd+Shift+F`.
+
 Each sidebar item also has a start/stop switch. Stopping an app keeps its tabs
 and shows a restart panel in place of the web page. Closing tabs does not stop
 services. Managed services and service-manager continue running when OpenHouse

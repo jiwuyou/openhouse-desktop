@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, WebContentsView, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, Menu, ipcMain, shell } = require("electron");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
@@ -29,6 +29,7 @@ const SIDEBAR_WIDTH = 224;
 const TOPBAR_HEIGHT = 46;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
+let chromeMenuItem;
 
 function normalizeUrl(value) {
   return String(value).replace(/\/$/, "");
@@ -80,6 +81,73 @@ function containerStats() {
     min: MIN_MAX_WEB_CONTAINERS,
     maxAllowed: MAX_MAX_WEB_CONTAINERS,
   };
+}
+
+function setShellChromeHidden(shellWindow, hidden) {
+  if (!shellWindow || shellWindow.window.isDestroyed()) return false;
+  shellWindow.chromeHidden = Boolean(hidden && shellWindow.activeTabId);
+  layoutShell(shellWindow);
+  sendTabState(shellWindow);
+  updateChromeMenuLabel(shellWindow);
+  return shellWindow.chromeHidden;
+}
+
+function updateChromeMenuLabel(shellWindow) {
+  if (chromeMenuItem) {
+    chromeMenuItem.label = shellWindow.chromeHidden ? "显示工作台边框" : "隐藏工作台边框";
+  }
+}
+
+function toggleFocusedShellChrome() {
+  const shellWindow = shellForWindow(BrowserWindow.getFocusedWindow());
+  return setShellChromeHidden(shellWindow, !shellWindow?.chromeHidden);
+}
+
+function installApplicationMenu() {
+  const menu = Menu.buildFromTemplate([
+    {
+      label: "文件",
+      submenu: [
+        { label: "关闭窗口", role: "close" },
+        { type: "separator" },
+        { label: "退出", role: "quit" },
+      ],
+    },
+    {
+      label: "编辑",
+      submenu: [
+        { label: "撤销", role: "undo" },
+        { label: "重做", role: "redo" },
+        { type: "separator" },
+        { label: "剪切", role: "cut" },
+        { label: "复制", role: "copy" },
+        { label: "粘贴", role: "paste" },
+        { label: "全选", role: "selectAll" },
+      ],
+    },
+    {
+      label: "查看",
+      submenu: [
+        {
+          id: "toggle-workspace-chrome",
+          label: "隐藏工作台边框",
+          accelerator: "CommandOrControl+Shift+F",
+          click: toggleFocusedShellChrome,
+        },
+        { label: "刷新页面", role: "reload", accelerator: "F5" },
+        { label: "强制刷新页面", role: "forceReload" },
+      ],
+    },
+    {
+      label: "窗口",
+      submenu: [
+        { label: "最小化", role: "minimize" },
+        { label: "关闭窗口", role: "close" },
+      ],
+    },
+  ]);
+  chromeMenuItem = menu.getMenuItemById("toggle-workspace-chrome");
+  Menu.setApplicationMenu(menu);
 }
 
 function runtimeRoot() {
@@ -553,6 +621,7 @@ function sendTabState(shellWindow) {
       tabs: tabState(shellWindow),
       containers: containerStats(),
       primary: shellWindow.primary,
+      chromeHidden: shellWindow.chromeHidden,
     });
   }
 }
@@ -562,10 +631,10 @@ function layoutShell(shellWindow) {
   const [width, height] = shellWindow.window.getContentSize();
   for (const tab of shellWindow.tabs.values()) {
     tab.view.setBounds({
-      x: SIDEBAR_WIDTH,
-      y: TOPBAR_HEIGHT,
-      width: Math.max(0, width - SIDEBAR_WIDTH),
-      height: Math.max(0, height - TOPBAR_HEIGHT),
+      x: shellWindow.chromeHidden ? 0 : SIDEBAR_WIDTH,
+      y: shellWindow.chromeHidden ? 0 : TOPBAR_HEIGHT,
+      width: shellWindow.chromeHidden ? width : Math.max(0, width - SIDEBAR_WIDTH),
+      height: shellWindow.chromeHidden ? height : Math.max(0, height - TOPBAR_HEIGHT),
     });
     const state = knownAppStates.get(tab.definition.id)?.state;
     tab.view.setVisible(tab.id === shellWindow.activeTabId && state === "running");
@@ -657,8 +726,10 @@ function activateTab(shellWindow, tabId) {
 
 function showDesktop(shellWindow) {
   shellWindow.activeTabId = null;
+  shellWindow.chromeHidden = false;
   layoutShell(shellWindow);
   sendTabState(shellWindow);
+  updateChromeMenuLabel(shellWindow);
 }
 
 async function createShellWindow(options = {}) {
@@ -681,6 +752,7 @@ async function createShellWindow(options = {}) {
     tabs: new Map(),
     activeTabId: null,
     sequence: 1,
+    chromeHidden: false,
     destroying: false,
     primary,
   };
@@ -689,6 +761,7 @@ async function createShellWindow(options = {}) {
     primaryShell = shellWindow;
   }
   appShells.add(shellWindow);
+  window.on("focus", () => updateChromeMenuLabel(shellWindow));
   window.on("resize", () => layoutShell(shellWindow));
   window.on("closed", () => {
     shellWindow.destroying = true;
@@ -742,7 +815,12 @@ ipcMain.handle("apps:set-running", (_event, id, shouldRun) => setApplicationRunn
 ipcMain.handle("tabs:list", (event) => {
   const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
   return shellWindow
-    ? { tabs: tabState(shellWindow), containers: containerStats(), primary: shellWindow.primary }
+    ? {
+      tabs: tabState(shellWindow),
+      containers: containerStats(),
+      primary: shellWindow.primary,
+      chromeHidden: shellWindow.chromeHidden,
+    }
     : { tabs: [], containers: containerStats(), primary: false };
 });
 ipcMain.handle("tabs:open", async (event, appId) => {
@@ -761,6 +839,14 @@ ipcMain.handle("tabs:activate", (event, tabId) => {
 ipcMain.handle("tabs:show-desktop", (event) => {
   const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
   if (shellWindow) showDesktop(shellWindow);
+});
+ipcMain.handle("shell:toggle-chrome", (event) => {
+  const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
+  return setShellChromeHidden(shellWindow, !shellWindow?.chromeHidden);
+});
+ipcMain.handle("shell:set-chrome", (event, hidden) => {
+  const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
+  return setShellChromeHidden(shellWindow, Boolean(hidden));
 });
 ipcMain.handle("tabs:new-window", async (event) => {
   const shellWindow = shellForWindow(BrowserWindow.fromWebContents(event.sender));
@@ -798,6 +884,7 @@ ipcMain.handle("shell:open-external", (_event, url) => {
 
 app.whenReady().then(async () => {
   await fsp.mkdir(stateRoot(), { recursive: true });
+  installApplicationMenu();
   appDefinitions = [...baseAppDefinitions, ...loadBundledWslApps()];
   await createDesktopWindow();
   void (async () => {

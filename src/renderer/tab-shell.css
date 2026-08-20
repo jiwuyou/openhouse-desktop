@@ -49,6 +49,8 @@ button { font: inherit; }
 .toolbar-button { height: 32px; border: 1px solid #344454; border-radius: 5px; color: #cbd6df; background: #202b36; padding: 0 10px; cursor: pointer; }
 .toolbar-button:hover { color: #fff; background: #304050; }
 .toolbar-button:disabled { cursor: default; opacity: .45; }
+.chrome-hidden .sidebar, .chrome-hidden .tabbar { display: none; }
+.chrome-hidden .workspace-state { inset: 0; }
 .workspace-state { position: fixed; inset: 46px 0 0 224px; display: grid; place-items: center; padding: 32px; background: #11161c; }
 .workspace-state[hidden] { display: none; }
 .desktop-panel { width: min(760px, 100%); align-self: start; margin-top: 54px; }

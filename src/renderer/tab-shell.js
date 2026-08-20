@@ -1,4 +1,4 @@
-const state = { apps: [], tabs: [], appStatuses: [], containers: null, polling: false, primary: false };
+const state = { apps: [], tabs: [], appStatuses: [], containers: null, polling: false, primary: false, chromeHidden: false };
 const $ = (id) => document.getElementById(id);
 
 function appFor(id) {
@@ -179,6 +179,9 @@ function renderTabs() {
   const canOpenInBrowser = Boolean(active && /^https?:\/\//i.test(active.url || ""));
   $("open-browser").hidden = !canOpenInBrowser;
   $("open-browser").disabled = !canOpenInBrowser;
+  $("toggle-chrome").hidden = !active;
+  $("toggle-chrome").textContent = state.chromeHidden ? "显示边框" : "隐藏边框";
+  document.body.classList.toggle("chrome-hidden", state.chromeHidden);
   $("new-window").hidden = !active;
   $("container-count").textContent = state.containers
     ? `${state.containers.active}/${state.containers.max}`
@@ -212,6 +215,7 @@ async function init() {
   state.tabs = current.tabs || [];
   state.containers = current.containers;
   state.primary = Boolean(current.primary);
+  state.chromeHidden = Boolean(current.chromeHidden);
   state.appStatuses = await window.openhouse.getAppStatuses();
   renderTabs();
   $("show-desktop").addEventListener("click", () => void window.openhouse.showDesktop());
@@ -233,6 +237,7 @@ async function init() {
       window.alert(error.message || "无法打开系统浏览器");
     }
   });
+  $("toggle-chrome").addEventListener("click", () => void window.openhouse.toggleChrome());
   $("new-window").addEventListener("click", async () => {
     const active = state.tabs.find((tab) => tab.active);
     if (!active) return;
@@ -253,6 +258,7 @@ window.openhouse.onTabsState((value) => {
   state.tabs = value.tabs || [];
   state.containers = value.containers;
   state.primary = Boolean(value.primary);
+  state.chromeHidden = Boolean(value.chromeHidden);
   renderTabs();
 });
 window.openhouse.onAppsState((value) => {

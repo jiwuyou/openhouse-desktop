@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld("openhouse", {
   getServiceStatuses: () => ipcRenderer.invoke("services:status"),
   getRuntimeStatus: () => ipcRenderer.invoke("runtime:status"),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url),
+  toggleChrome: () => ipcRenderer.invoke("shell:toggle-chrome"),
+  setChromeHidden: (hidden) => ipcRenderer.invoke("shell:set-chrome", hidden),
 });
