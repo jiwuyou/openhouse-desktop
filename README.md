@@ -2,7 +2,8 @@
 
 OpenHouse Desktop is a small Electron shell for local web applications. It
 bundles `service-manager`, a normal Windows WuxianPi, and an independent repair
-WuxianPi. The web pages remain WuxianPi pages; the shell only starts processes,
+WuxianPi, plus an optional Windows DeepSeek Harness. The web pages remain local
+agent pages; the shell only starts processes,
 opens BrowserWindows, and returns to the desktop.
 
 ## Runtime layout
@@ -11,7 +12,8 @@ opens BrowserWindows, and returns to the desktop.
 OpenHouse Desktop
 ├── service-manager (Windows host)
 ├── WuxianPi (Windows process, 20765)
-└── 维修 WuxianPi (independent Windows process, 20766)
+├── 维修 WuxianPi (independent Windows process, 20766)
+└── DeepSeek Harness (Windows process, 3080)
 ```
 
 Other Linux-only apps can be registered with service-manager's `wsl` provider.
@@ -60,7 +62,25 @@ npm run stage:runtime -- `
   --wuxianpi C:\build\desktop-runtime `
   --service-manager C:\build\service-manager.exe `
   --node "C:\Program Files\nodejs\node.exe" `
+  --deepseek-harness C:\build\deepseek-harness `
   --platform win32 --arch x64
 
 npm run dist:win
 ```
+
+Install the public DeepSeek Harness runtime for Windows before staging it. The
+full source checkout is not staged: it contains development dependencies and
+is roughly 1.4 GiB. The production npm runtime is about 193 MiB and is the
+only Harness payload included with OpenHouse.
+
+```powershell
+New-Item -ItemType Directory -Force C:\build\deepseek-harness-runtime
+pnpm --dir C:\build\deepseek-harness-runtime init
+pnpm --dir C:\build\deepseek-harness-runtime add --prod --config.node-linker=hoisted @deepseek-ai/dsh@0.1.0-rc.7
+```
+
+Use that `C:\build\deepseek-harness-runtime` directory for
+`--deepseek-harness`. The desktop starts it with
+`dsh web --host 127.0.0.1 --port 3080 --no-open`. Its data is kept under the
+OpenHouse user data directory via `DSH_HOME`; it is not installed or run in
+WSL2.

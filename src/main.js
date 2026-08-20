@@ -155,8 +155,12 @@ function runtimeRoot() {
 }
 
 function runtimeDir(kind) {
-  const envName = kind === "repair" ? "OPENHOUSE_REPAIR_RUNTIME_ROOT" : "OPENHOUSE_NORMAL_RUNTIME_ROOT";
-  return process.env[envName] || path.join(runtimeRoot(), `wuxianpi-${kind}`);
+  const envNames = {
+    repair: "OPENHOUSE_REPAIR_RUNTIME_ROOT",
+    harness: "OPENHOUSE_DEEPSEEK_HARNESS_RUNTIME_ROOT",
+    normal: "OPENHOUSE_NORMAL_RUNTIME_ROOT",
+  };
+  return process.env[envNames[kind] || envNames.normal] || path.join(runtimeRoot(), kind === "harness" ? "deepseek-harness" : `wuxianpi-${kind}`);
 }
 
 function nodeBinary() {
@@ -168,6 +172,18 @@ function nodeBinary() {
 
 function runtimeCommand(kind, port) {
   const root = runtimeDir(kind);
+  if (kind === "harness") {
+    const entry = path.join(root, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+    const harnessHome = path.join(stateRoot(), "deepseek-harness", "home");
+    return {
+      command: [nodeBinary(), entry, "web", "--host", "127.0.0.1", "--port", String(port), "--no-open"],
+      workingDir: root,
+      env: {
+        DSH_HOME: harnessHome,
+        OPENHOUSE_DEEPSEEK_HARNESS: "1",
+      },
+    };
+  }
   const runtimeEntry = path.join(root, "runtime", "dist", "index.js");
   const webRoot = path.join(root, "web");
   const agentDir = path.join(stateRoot(), `wuxianpi-${kind}`, "agent");
@@ -350,7 +366,9 @@ function serviceSpec(definition) {
     env: command.env,
     runtime: provider === "wsl" ? definition.wsl || {} : {},
     restart: { mode: "on-failure", max_retries: 3 },
-    health: [{ type: "http", url: `${definition.url}health`, interval: "15s", timeout: "3s" }],
+    health: definition.health === false
+      ? []
+      : [{ type: "http", url: `${definition.url}health`, interval: "15s", timeout: "3s" }],
     enabled: true,
     residentByDefault: false,
     tags: ["openhouse", definition.id],

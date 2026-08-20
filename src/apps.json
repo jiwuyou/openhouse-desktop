@@ -22,5 +22,19 @@
     "url": "http://127.0.0.1:20766/",
     "desktop": true,
     "order": 20
+  },
+  {
+    "id": "deepseek-harness",
+    "title": "DeepSeek Harness",
+    "icon": "D",
+    "kind": "managed",
+    "runtime": "harness",
+    "provider": "windows-process",
+    "serviceId": "deepseek-harness",
+    "port": 3080,
+    "url": "http://127.0.0.1:3080/",
+    "health": false,
+    "desktop": true,
+    "order": 30
   }
 ]
