@@ -210,13 +210,31 @@ async function refreshStatuses() {
 }
 
 async function init() {
-  state.apps = await window.openhouse.listApps();
-  const current = await window.openhouse.listTabs();
-  state.tabs = current.tabs || [];
-  state.containers = current.containers;
-  state.primary = Boolean(current.primary);
-  state.chromeHidden = Boolean(current.chromeHidden);
-  state.appStatuses = await window.openhouse.getAppStatuses();
+  try {
+    state.apps = await window.openhouse.listApps();
+  } catch (error) {
+    showStartupError(`无法读取应用列表：${error.message || String(error)}`);
+    return;
+  }
+  // Render the desktop as soon as the catalog is available. A temporarily
+  // unavailable service-manager must not leave the whole workspace blank.
+  state.appStatuses = state.apps.map((app) => ({ id: app.id, state: "stopped", error: "" }));
+  renderTabs();
+  try {
+    const current = await window.openhouse.listTabs();
+    state.tabs = current.tabs || [];
+    state.containers = current.containers;
+    state.primary = Boolean(current.primary);
+    state.chromeHidden = Boolean(current.chromeHidden);
+    renderTabs();
+  } catch (error) {
+    showStartupError(`网页工作区初始化失败：${error.message || String(error)}`);
+  }
+  try {
+    state.appStatuses = await window.openhouse.getAppStatuses();
+  } catch (error) {
+    state.appStatuses = state.apps.map((app) => ({ id: app.id, state: "stopped", error: "服务状态暂时不可用" }));
+  }
   renderTabs();
   $("show-desktop").addEventListener("click", () => void window.openhouse.showDesktop());
   $("new-tab").addEventListener("click", async () => {
@@ -254,6 +272,19 @@ async function init() {
   window.setInterval(() => void refreshStatuses(), 5000);
 }
 
+function showStartupError(message) {
+  const panel = $("workspace-state");
+  panel.hidden = false;
+  $("desktop-panel").hidden = false;
+  $("service-panel").hidden = true;
+  const root = $("desktop-apps");
+  root.textContent = "";
+  const error = document.createElement("p");
+  error.className = "startup-error";
+  error.textContent = message;
+  root.appendChild(error);
+}
+
 window.openhouse.onTabsState((value) => {
   state.tabs = value.tabs || [];
   state.containers = value.containers;
@@ -268,4 +299,6 @@ window.openhouse.onAppsState((value) => {
   renderWorkspaceState();
 });
 window.openhouse.onTabsError((value) => window.alert(value?.message || "网页容器发生错误"));
+window.addEventListener("error", (event) => showStartupError(`工作台加载失败：${event.error?.message || event.message}`));
+window.addEventListener("unhandledrejection", (event) => showStartupError(`工作台初始化失败：${event.reason?.message || event.reason || "未知错误"}`));
 void init();
