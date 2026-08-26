@@ -397,12 +397,29 @@ function appDefinition(id) {
 
 async function startRepair(definition) {
   const current = appProcesses.get(definition.id);
-  if (current && current.exitCode === null && !current.killed) return;
+  if (current && current.exitCode === null && !current.killed) {
+    try {
+      await waitForHttp(definition.url, 1000);
+      return;
+    } catch {
+      stopRepair(definition.id);
+    }
+  }
+  // Reuse a healthy repair runtime left by an earlier shell process instead of
+  // starting a second Node process on the fixed repair port.
+  try {
+    await waitForHttp(definition.url, 1000);
+    appErrors.delete(definition.id);
+    return;
+  } catch {
+    // No healthy runtime is listening; start the independent repair process.
+  }
   const command = runtimeCommand("repair", definition.port);
   await fsp.mkdir(command.workingDir, { recursive: true });
   const logDirectory = path.join(stateRoot(), "wuxianpi-repair", "logs");
   await fsp.mkdir(logDirectory, { recursive: true });
   const output = fs.openSync(path.join(logDirectory, "runtime.log"), "a");
+  fs.appendFileSync(path.join(logDirectory, "runtime.log"), `\n[${new Date().toISOString()}] starting repair: ${command.command.join(" ")}\n`);
   const child = spawn(command.command[0], command.command.slice(1), {
     cwd: command.workingDir,
     env: { ...process.env, ...command.env },
@@ -425,7 +442,7 @@ async function startRepair(definition) {
     await waitForHttp(definition.url);
   } catch (error) {
     stopRepair(definition.id);
-    throw error;
+    throw new Error(`维修 WuxianPi 未能启动：${error.message || String(error)}`);
   }
 }
 
@@ -448,7 +465,16 @@ function stopRepair(id) {
 async function readApplicationState(definition) {
   if (definition.kind === "repair") {
     const child = appProcesses.get(definition.id);
-    return child && child.exitCode === null && !child.killed ? "running" : "stopped";
+    if (child && child.exitCode === null && !child.killed) return "running";
+    // A previous OpenHouse instance may have left the independent repair
+    // runtime alive. Treat a healthy fixed-port listener as running so the
+    // tab is not hidden after we reuse that process.
+    try {
+      await waitForHttp(definition.url, 1000);
+      return "running";
+    } catch {
+      return "stopped";
+    }
   }
   if (definition.kind === "managed") {
     try {

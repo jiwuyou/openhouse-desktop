@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +37,13 @@ if (deepseekHarness) {
 }
 for (const file of required) {
   if (!existsSync(file)) throw new Error(`Missing runtime input: ${file}`);
+}
+
+for (const profile of ["wuxianpi-normal", "wuxianpi-repair"]) {
+  const validator = join(wuxianpiRoot, profile, "runtime", "dist", "package-validator.js");
+  if (!existsSync(validator) || !readFileSync(validator, "utf8").includes("relative(rootPath, target)")) {
+    throw new Error(`WuxianPi ${profile} runtime is stale: rebuild runtime before staging the desktop package`);
+  }
 }
 
 mkdirSync(output, { recursive: true });
